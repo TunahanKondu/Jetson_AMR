@@ -1,0 +1,287 @@
+<?xml version="1.0" ?>
+<robot name="karakuri" xmlns:xacro="http://ros.org/wiki/xacro">
+
+
+<xacro:property name="box_length_col" value="1.20"/>
+
+<xacro:property name="box_length" value="0.90"/>
+<xacro:property name="box_width" value="0.63"/>
+<xacro:property name="box_heigh" value="0.40"/>
+<xacro:property name="sphere_wheel_radius" value="0.05"/>
+<xacro:property name="wheel_radius" value="0.1"/>
+<xacro:property name="wheel_length" value="0.05"/>
+
+<xacro:property name="wheel_smoothly" value="0.0"/>
+
+<xacro:include filename="common_materials.xacro" />
+
+
+
+<xacro:macro name="edge_wheel_link" params="prefix">
+    <link name="${prefix}_wheel_link">
+        <visual>
+            <origin xyz="0 0 ${sphere_wheel_radius}" rpy="0 0 0"/>
+            <geometry>
+                <sphere radius="${sphere_wheel_radius}"/>
+            </geometry>
+            <material name="gray"/>
+        </visual>
+
+        <collision>
+            <origin xyz="0 0 ${sphere_wheel_radius}" rpy="0 0 0"/>
+            <geometry>
+                <sphere radius="${sphere_wheel_radius}"/>
+            </geometry>
+        </collision> 
+
+        <xacro:sphere_inertia m="0.01" r="${sphere_wheel_radius}" o_xyz="0 0 ${sphere_wheel_radius}" o_rpy="0 0 0" />
+    </link>
+</xacro:macro>
+
+<xacro:macro name="middle_wheel_link" params="prefix">
+    <link name="${prefix}_wheel_link">
+        <visual>
+            <origin xyz="0 0 0" rpy="${pi / 2} 0 0"/>
+            <geometry>
+                <cylinder radius="${wheel_radius}" length="${wheel_length}"/>
+            </geometry>
+            <material name="gray"/>
+        </visual>
+
+        <collision>
+            <geometry>
+                <sphere radius="${wheel_radius}" />
+            </geometry>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+        </collision> 
+
+        <xacro:cylinder_inertia m="1.0" r="${wheel_radius}" h="${wheel_length}" o_xyz="0 0 0" o_rpy="${pi / 2} 0 0"></xacro:cylinder_inertia>
+
+    </link>
+</xacro:macro>
+
+<!-- ********************************************************************************************************* -->
+
+<link name="base_link">
+    <visual>
+        <origin xyz="0 0 ${box_heigh / 2}" rpy="0 0 0"/>
+        <geometry>
+            <box size="${box_length} ${box_width} ${box_heigh}"/>
+        </geometry>
+        <material name="graphite_black"/>
+    </visual>
+
+    <collision>
+        <origin xyz="0 0 ${box_heigh / 2}" rpy="0 0 0"/>
+        <geometry>
+            <box size="${box_length_col} ${box_width} ${box_heigh}"/>
+        </geometry>
+    </collision>   
+
+    <xacro:box_inertia m="5.0" x="${box_length}" y="${box_width}" z="${box_heigh}"
+                           o_xyz="0 0 ${box_heigh / 2}" o_rpy="0 0 0" />
+</link>
+
+<link name="lidar_base_link">
+    <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+            <cylinder radius="0.1" length="0.05"/>
+        </geometry>
+        <material name="pearl_white"/>
+    </visual>
+
+    <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+            <cylinder radius="0.1" length="0.05"/>
+        </geometry>
+    </collision> 
+
+    <xacro:cylinder_inertia m="0.5" r="0.1" h="0.05" o_xyz="0 0 0" o_rpy="0 0 0"></xacro:cylinder_inertia>
+
+ </link>
+
+ <link name="lidar_top_link">
+    <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+            <cylinder radius="0.08" length="0.1"/>
+        </geometry>
+        <material name="metallic_silver"/>
+    </visual>
+
+    <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+            <cylinder radius="0.09" length="0.1"/>
+        </geometry>
+    </collision> 
+
+    <xacro:cylinder_inertia m="0.5" r="0.1" h="0.05" o_xyz="0 0 0" o_rpy="0 0 0"></xacro:cylinder_inertia>
+
+ </link>
+
+
+<link name="base_footprint"> </link>
+
+<xacro:edge_wheel_link prefix="right_up"/>
+<xacro:edge_wheel_link prefix="right_down"/>
+<xacro:edge_wheel_link prefix="left_up"/>
+<xacro:edge_wheel_link prefix="left_down"/>
+
+<xacro:middle_wheel_link prefix="right"/>
+<xacro:middle_wheel_link prefix="left"/>
+
+
+
+
+<!-- ********************************************************************************************************* -->
+
+<joint name="empty_base" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 0.1" rpy="0 0 0"/>
+</joint>
+
+<joint name="base_lidar_base_joint" type="fixed">
+    <parent link="base_link" ></parent>
+    <child link="lidar_base_link"></child>
+    <origin xyz="${(box_length/2)} 0 ${box_heigh}" rpy="0 0 0"></origin>
+    <axis xyz="0 1 0"></axis>
+</joint>
+
+<joint name="base_lidar_top_lidar_joint" type="fixed">
+    <parent link="lidar_base_link" ></parent>
+    <child link="lidar_top_link"></child>
+    <origin xyz="0 0 0.05" rpy="0 0 0"></origin>
+    <axis xyz="0 1 0"></axis>
+</joint>
+
+<joint name="base_middle_wheel_left_joint" type="continuous">
+    <parent link="base_link"></parent>
+    <child link="left_wheel_link"></child>
+    <origin xyz="0  ${-((box_width / 2) * 0.8)} 0" rpy="0 0 ${pi}"></origin>
+    <axis xyz="0 1 0"></axis>
+</joint>
+
+<joint name="base_middle_wheel_right_joint" type="continuous">
+    <parent link="base_link"></parent>
+    <child link="right_wheel_link"></child>
+    <origin xyz="0 ${((box_width / 2) * 0.8)} 0" rpy="0 0 ${pi}"></origin>
+    <axis xyz="0 1 0"></axis>
+</joint>
+
+
+<joint name="base_right_up_wheel_joint" type="fixed">
+    <parent link="base_link" ></parent>
+    <child link="right_up_wheel_link"></child>
+    <origin xyz="${(box_length / 2) * 0.85} ${ -((box_width / 2) * 0.85) } ${-(sphere_wheel_radius * 2)}" rpy="0 0 0"></origin>
+    <axis xyz="0 1 0"></axis>
+</joint>
+
+<joint name="base_right_down_wheel_joint" type="fixed">
+    <parent link="base_link" ></parent>
+    <child link="right_down_wheel_link"></child>
+    <origin xyz="${-((box_length / 2) * 0.85)} ${ -((box_width / 2) * 0.85) } ${-(sphere_wheel_radius * 2)}" rpy="0 0 0"></origin>
+    <axis xyz="0 1 0"></axis>
+</joint>
+
+<joint name="base_left_up_wheel_joint" type="fixed">
+    <parent link="base_link" ></parent>
+    <child link="left_up_wheel_link"></child>
+    <origin xyz="${ ((box_length / 2) * 0.85)} ${ ((box_width / 2) * 0.85) } ${-(sphere_wheel_radius * 2)}" rpy="0 0 0"></origin>
+    <axis xyz="0 1 0"></axis>
+</joint>
+
+<joint name="base_left_down_wheel_joint" type="fixed">
+    <parent link="base_link" ></parent>
+    <child link="left_down_wheel_link"></child>
+    <origin xyz="${ -((box_length / 2) * 0.85)} ${ ((box_width / 2) * 0.85) } ${-(sphere_wheel_radius * 2)}" rpy="0 0 0"></origin>
+    <axis xyz="0 1 0"></axis>
+</joint>
+
+<!-- ********************************************************************************************************* -->
+
+<gazebo>
+    <plugin
+        filename="gz-sim-sensors-system"
+        name="gz::sim::systems::Sensors">
+        <render_engine>ogre2</render_engine>
+    </plugin>
+</gazebo>
+
+<gazebo reference="right_up_wheel_link">
+    <mu1 value="${wheel_smoothly}" />
+    <mu2 value="${wheel_smoothly}" />
+</gazebo>
+
+<gazebo reference="right_down_wheel_link">
+    <mu1 value="${wheel_smoothly}" />
+    <mu2 value="${wheel_smoothly}" />
+</gazebo>
+
+<gazebo reference="left_up_wheel_link">
+    <mu1 value="${wheel_smoothly}" />
+    <mu2 value="${wheel_smoothly}" />
+</gazebo>
+
+<gazebo reference="left_down_wheel_link">
+    <mu1 value="${wheel_smoothly}" />
+    <mu2 value="${wheel_smoothly}" />
+</gazebo>
+
+<gazebo>
+    <plugin 
+        filename="gz-sim-diff-drive-system" 
+        name="gz::sim::systems::DiffDrive">
+        <left_joint>base_middle_wheel_left_joint</left_joint>
+        <right_joint>base_middle_wheel_right_joint</right_joint>
+        <wheel_separation>0.63</wheel_separation>
+        <wheel_radius>0.1</wheel_radius>
+        <frame_id>odom</frame_id>
+        <child_frame_id>base_footprint</child_frame_id>
+    </plugin>
+</gazebo>
+
+<gazebo reference="lidar_top_link">
+    <sensor name="lidar" type="gpu_lidar">
+        <always_on>true</always_on>
+        <visualize>true</visualize>
+        <topic>scan</topic>
+        <update_rate>15</update_rate> <!-- 10–20 Hz typical -->
+        <gz_frame_id>lidar_top_link</gz_frame_id>
+        <lidar>
+            <scan>
+                <horizontal>
+                    <samples>720</samples> <!-- Angular resolution ~0.5° -->
+                    <resolution>1.0</resolution>
+                    <min_angle>-3.14</min_angle>
+                    <max_angle>3.14</max_angle>
+                </horizontal>
+            </scan>
+            <range>
+                <min>0.2</min>           <!-- Min range of RPLIDAR A3 -->
+                <max>25.0</max>          <!-- Max range under ideal conditions -->
+                <resolution>0.01</resolution>
+            </range>
+            <noise>
+                <type>gaussian</type>
+                <mean>0.0</mean>
+                <stddev>0.005</stddev>   <!-- A3 has relatively low noise -->
+            </noise>
+        </lidar>
+    </sensor>
+</gazebo>
+
+
+
+<gazebo>
+    <plugin 
+        filename="gz-sim-joint-state-publisher-system" 
+        name="gz::sim::systems::JointStatePublisher">
+    </plugin>
+</gazebo>
+
+
+</robot>
