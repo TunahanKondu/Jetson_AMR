@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 
+import math
 import socket
 import struct
 import time
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from rclpy.time import Time
 
 from std_msgs.msg import UInt8
@@ -25,10 +27,10 @@ class PlcUdpBridge(Node):
         # -------------------------------------------------
         # Parametreler
         # -------------------------------------------------
-        self.declare_parameter('local_ip', '0.0.0.0')
+        self.declare_parameter('local_ip', '172.20.10.2')
         self.declare_parameter('local_port', 0)
 
-        self.declare_parameter('plc_ip', '127.0.0.1')
+        self.declare_parameter('plc_ip', '172.20.10.6')
         self.declare_parameter('plc_port', 1515)
 
         self.declare_parameter('send_period_ms', 1000)
@@ -69,12 +71,19 @@ class PlcUdpBridge(Node):
             'robot_frame'
         ).get_parameter_value().string_value
 
+        if self.send_period_ms <= 0 or self.connection_timeout_ms <= 0:
+            raise ValueError('UDP periods must be positive')
+        if not 0 <= self.local_port <= 65535 or not 1 <= self.plc_port <= 65535:
+            raise ValueError('Invalid UDP port')
+
         # -------------------------------------------------
         # PLC'ye gönderilecek güncel bilgiler
         # -------------------------------------------------
         self.robot_status = 1
-        self.pickup_station = 0
-        self.dropoff_station = 0
+        self.pickup_station = 1
+        self.dropoff_station = 2
+        self.last_position_cm = (0, 0)
+        self.last_tf_warning = None
 
         self.last_rx_time = None
         self.connection_state = False
@@ -124,11 +133,17 @@ class PlcUdpBridge(Node):
             10
         )
 
+        connection_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
         self.connected_pub = self.create_publisher(
             Bool,
             '/plc/connected',
-            10
+            connection_qos
         )
+        self.set_connection_state(False, force=True)
 
         self.raw_rx_pub = self.create_publisher(
             UInt8MultiArray,
@@ -176,7 +191,7 @@ class PlcUdpBridge(Node):
 
         self.get_logger().info(
             'PLC UDP bridge başlatıldı. '
-            f'Local={self.local_ip}:{self.local_port}, '
+            f'Local={self.socket.getsockname()}, '
             f'PLC={self.plc_ip}:{self.plc_port}'
         )
 
@@ -193,7 +208,7 @@ class PlcUdpBridge(Node):
             )
 
     def pickup_callback(self, msg):
-        if 0 <= msg.data <= 3:
+        if 1 <= msg.data <= 3:
             self.pickup_station = msg.data
         else:
             self.get_logger().warning(
@@ -201,7 +216,7 @@ class PlcUdpBridge(Node):
             )
 
     def dropoff_callback(self, msg):
-        if 0 <= msg.data <= 3:
+        if 1 <= msg.data <= 3:
             self.dropoff_station = msg.data
         else:
             self.get_logger().warning(
@@ -223,6 +238,9 @@ class PlcUdpBridge(Node):
             x_m = transform.transform.translation.x
             y_m = transform.transform.translation.y
 
+            if not math.isfinite(x_m) or not math.isfinite(y_m):
+                raise ValueError('TF position is not finite')
+
             # Şartname: integer(metre * 100)
             x_cm = int(x_m * 100.0)
             y_cm = int(y_m * 100.0)
@@ -231,10 +249,17 @@ class PlcUdpBridge(Node):
             x_cm = max(-32768, min(32767, x_cm))
             y_cm = max(-32768, min(32767, y_cm))
 
-            return x_cm, y_cm
+            self.last_position_cm = (x_cm, y_cm)
+            return self.last_position_cm
 
-        except TransformException:
-            return 0, 0
+        except (TransformException, ValueError, OverflowError) as error:
+            now = time.monotonic()
+            if self.last_tf_warning is None or now - self.last_tf_warning >= 5.0:
+                self.get_logger().warning(
+                    f'TF unavailable; using {self.last_position_cm} cm: {error}'
+                )
+                self.last_tf_warning = now
+            return self.last_position_cm
 
     # =====================================================
     # PLC'YE 7 BYTE GÖNDER
@@ -263,12 +288,7 @@ class PlcUdpBridge(Node):
             self.tx_packet_count += 1
 
             self.get_logger().info(
-                'PLC TX | '
-                f'durum={self.robot_status}, '
-                f'alım={self.pickup_station}, '
-                f'bırakma={self.dropoff_station}, '
-                f'x={x_cm}, y={y_cm}, '
-                f'sayaç={self.tx_packet_count}'
+                f'TX 7 byte: {packet.hex(" ")} #{self.tx_packet_count}'
             )
 
         except OSError as error:
@@ -283,7 +303,7 @@ class PlcUdpBridge(Node):
     def receive_packets(self):
         while True:
             try:
-                data = self.socket.recv(64)
+                data = self.socket.recv(65535)
 
             except BlockingIOError:
                 break
@@ -340,17 +360,8 @@ class PlcUdpBridge(Node):
 
             self.set_connection_state(True)
 
-            control_text = (
-                'BEKLE'
-                if control == 1
-                else 'BAŞLA/DEVAM ET'
-            )
-
             self.get_logger().info(
-                'PLC RX | '
-                f'A{pickup} -> B{dropoff}, '
-                f'kontrol={control_text}, '
-                f'sayaç={self.rx_packet_count}'
+                f'RX 3 byte: {data.hex(" ")} #{self.rx_packet_count}'
             )
 
     # =====================================================
@@ -372,8 +383,8 @@ class PlcUdpBridge(Node):
 
         self.set_connection_state(connected)
 
-    def set_connection_state(self, connected):
-        if self.connection_state == connected:
+    def set_connection_state(self, connected, force=False):
+        if self.connection_state == connected and not force:
             return
 
         self.connection_state = connected
@@ -388,7 +399,7 @@ class PlcUdpBridge(Node):
             )
         else:
             self.get_logger().warning(
-                'PLC bağlantısı zaman aşımına uğradı.'
+                'PLC bağlantısı yok.'
             )
 
     def destroy_node(self):

@@ -1,0 +1,25 @@
+# VS Code
+.vscode/
+
+# ROS / colcon build çıktıları
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Sistem / geçici dosyalar
+.DS_Store
+*.swp
+*.swo
+*~
