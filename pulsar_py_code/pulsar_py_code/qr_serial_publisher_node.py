@@ -15,7 +15,7 @@ class QrSerialPublisher(Node):
 
         self.declare_parameter(
             'port',
-            '/dev/ttyACM0'
+            '/dev/ttyACM1'
         )
 
         self.declare_parameter(
@@ -114,33 +114,30 @@ class QrSerialPublisher(Node):
                     remaining
                 )
 
-                raw_text = (
-                    line + b'\n'
-                ).decode(
+                qr_text = line.decode(
                     'utf-8',
                     errors='ignore'
-                )
+                ).strip().upper()
 
-                if not raw_text:
+                if not qr_text:
                     continue
 
-                self.publish_qr(raw_text)
+                self.publish_qr(qr_text)
 
         except serial.SerialException as error:
             self.get_logger().error(
                 f'Serial read error: {error}'
             )
 
-    def publish_qr(self, raw_text):
+    def publish_qr(self, qr_text):
 
         message = String()
-        message.data = raw_text
+        message.data = qr_text
 
         self.publisher_.publish(message)
 
         self.get_logger().info(
-            f'Published raw QR: '
-            f'{repr(raw_text)}'
+            f'Published QR: {qr_text}'
         )
 
     def destroy_node(self):

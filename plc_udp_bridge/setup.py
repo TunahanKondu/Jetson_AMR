@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'pulsar_line_following'
+package_name = 'plc_udp_bridge'
 
 setup(
     name=package_name,
@@ -14,7 +14,7 @@ setup(
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='pulsar_robotic',
-    maintainer_email='pulsar_robotic@todo.todo',
+    maintainer_email='tkondu7042@gmail.com',
     description='TODO: Package description',
     license='TODO: License declaration',
     extras_require={
@@ -23,10 +23,9 @@ setup(
         ],
     },
     entry_points={
-        'console_scripts': [
-        'line_detector = pulsar_line_following.line_detector_node:main',
-        'line_controller = pulsar_line_following.line_controller_node:main',
-        'pre_alignment = pulsar_line_following.pre_alignment_node:main',
+        'console_scripts': [        	
+            'plc_udp_bridge_node = plc_udp_bridge.plc_udp_bridge_node:main',    
+            'plc_mission_adapter_node = plc_udp_bridge.plc_mission_adapter_node:main',            
         ],
     },
 )
