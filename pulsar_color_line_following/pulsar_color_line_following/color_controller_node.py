@@ -16,7 +16,7 @@ class ColorControllerNode(Node):
         self.declare_parameter('control_frequency', 30.0)
         self.declare_parameter('linear_speed', 0.02)
         self.declare_parameter('minimum_linear_speed', 0.01)
-        self.declare_parameter('maximum_angular_speed', 0.20)
+        self.declare_parameter('maximum_angular_speed', 0.50)
         self.declare_parameter('maximum_linear_acceleration', 0.05)
         self.declare_parameter('maximum_angular_acceleration', 0.8)
         self.declare_parameter('slowdown_gain', 0.8)

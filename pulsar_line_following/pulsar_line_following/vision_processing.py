@@ -21,6 +21,10 @@ class LineDetection:
     search_right: Optional[int] = None
     candidate_count: int = 0
     score: float = 0.0
+    angle_error_deg: Optional[float] = None
+    offset_px: Optional[float] = None
+    reference_point: Optional[Tuple[int, int]] = None
+    fit_line_points: Optional[Tuple[Tuple[int, int], Tuple[int, int]]] = None
 
 
 def detect_line(
@@ -39,6 +43,7 @@ def detect_line(
     expected_line_width_ratio: float = 0.06,
     previous_center_x: Optional[int] = None,
     maximum_center_jump_ratio: float = 0.20,
+    reference_y_ratio: float = 0.85,
 ) -> LineDetection:
     """Find the best dark (or light) line candidate in the lower ROI.
 
@@ -160,6 +165,54 @@ def detect_line(
     half_width = max(width / 2.0, 1.0)
     error = float(np.clip((center_x - half_width) / half_width, -1.0, 1.0))
 
+    # Fit one straight line through the detected contour.  The angle is
+    # measured from the vertical image direction, so a perfectly aligned
+    # floor line is 0 degrees.
+    vx, vy, x0, y0 = cv2.fitLine(
+        contour,
+        cv2.DIST_L2,
+        0,
+        0.01,
+        0.01,
+    ).flatten()
+    vx = float(vx)
+    vy = float(vy)
+    x0 = float(x0)
+    y0 = float(y0)
+
+    # cv2.fitLine may return either direction along the same line.  Force
+    # the vector to point downward so the angle sign does not flip between
+    # frames.
+    if vy < 0.0:
+        vx = -vx
+        vy = -vy
+
+    angle_error_deg = float(np.degrees(np.arctan2(vx, vy)))
+
+    reference_y_ratio = float(np.clip(reference_y_ratio, 0.0, 1.0))
+    reference_y_roi = int(round((roi_height - 1) * reference_y_ratio))
+
+    if abs(vy) > 1e-6:
+        reference_x = x0 + (reference_y_roi - y0) * vx / vy
+        x_top = x0 + (0.0 - y0) * vx / vy
+        x_bottom = x0 + ((roi_height - 1.0) - y0) * vx / vy
+    else:
+        # A nearly horizontal candidate is far from the desired alignment.
+        # Keep a finite reference value so the caller can still display it.
+        reference_x = x0
+        x_top = x0
+        x_bottom = x0
+
+    offset_px = float(reference_x - width / 2.0)
+    reference_point = (
+        int(round(reference_x)),
+        int(reference_y_roi + roi_top),
+    )
+    fit_line_points = (
+        (int(round(x_top)), roi_top),
+        (int(round(x_bottom)), height - 1),
+    )
+
     return LineDetection(
         mask=mask,
         roi_top=roi_top,
@@ -171,6 +224,10 @@ def detect_line(
         search_right=search_right,
         candidate_count=len(candidates),
         score=score,
+        angle_error_deg=angle_error_deg,
+        offset_px=offset_px,
+        reference_point=reference_point,
+        fit_line_points=fit_line_points,
     )
 
 
@@ -235,6 +292,25 @@ def draw_detection(frame: np.ndarray, detection: LineDetection) -> np.ndarray:
         (255, 255, 0),
         2,
     )
+
+    if detection.fit_line_points is not None:
+        cv2.line(
+            debug_frame,
+            detection.fit_line_points[0],
+            detection.fit_line_points[1],
+            (0, 0, 255),
+            3,
+        )
+
+    if detection.reference_point is not None:
+        cv2.circle(
+            debug_frame,
+            detection.reference_point,
+            8,
+            (255, 0, 255),
+            -1,
+        )
+
     cv2.putText(
         debug_frame,
         'LINE '
@@ -248,6 +324,17 @@ def draw_detection(frame: np.ndarray, detection: LineDetection) -> np.ndarray:
         (0, 255, 0),
         2,
     )
+    if detection.angle_error_deg is not None and detection.offset_px is not None:
+        cv2.putText(
+            debug_frame,
+            f'ANGLE={detection.angle_error_deg:+.2f} deg  '
+            f'OFFSET={detection.offset_px:+.1f} px',
+            (20, 75),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 255, 255),
+            2,
+        )
     return debug_frame
 
 

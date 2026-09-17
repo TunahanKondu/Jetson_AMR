@@ -1,0 +1,10 @@
+plc_udp_bridge:
+  ros__parameters:
+    local_ip: "172.20.10.2"
+    local_port: 0
+    plc_ip: "172.20.10.6"
+    plc_port: 1515
+    send_period_ms: 1000
+    connection_timeout_ms: 2500
+    map_frame: "map"
+    robot_frame: "base_footprint"
