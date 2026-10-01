@@ -82,7 +82,8 @@ class PlcUdpBridge(Node):
         self.robot_status = 1
         self.pickup_station = 1
         self.dropoff_station = 2
-        self.last_position_cm = (0, 0)
+        # Protocol value is metre * 100 (signed Int16), not a floating value.
+        self.last_position_scaled = (0, 0)
         self.last_tf_warning = None
 
         self.last_rx_time = None
@@ -103,25 +104,31 @@ class PlcUdpBridge(Node):
         # -------------------------------------------------
         # ROS subscriber'ları
         # -------------------------------------------------
+        tx_value_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+
         self.status_sub = self.create_subscription(
             UInt8,
             '/plc/tx_status',
             self.status_callback,
-            10
+            tx_value_qos
         )
 
         self.pickup_sub = self.create_subscription(
             UInt8,
             '/plc/tx_pickup',
             self.pickup_callback,
-            10
+            tx_value_qos
         )
 
         self.dropoff_sub = self.create_subscription(
             UInt8,
             '/plc/tx_dropoff',
             self.dropoff_callback,
-            10
+            tx_value_qos
         )
 
         # -------------------------------------------------
@@ -144,6 +151,12 @@ class PlcUdpBridge(Node):
             connection_qos
         )
         self.set_connection_state(False, force=True)
+
+        self.raw_tx_pub = self.create_publisher(
+            UInt8MultiArray,
+            '/plc/raw_tx',
+            10
+        )
 
         self.raw_rx_pub = self.create_publisher(
             UInt8MultiArray,
@@ -227,7 +240,7 @@ class PlcUdpBridge(Node):
     # ROBOT POZİSYONU
     # =====================================================
 
-    def get_robot_position_cm(self):
+    def get_robot_position_scaled(self):
         try:
             transform = self.tf_buffer.lookup_transform(
                 self.map_frame,
@@ -242,31 +255,32 @@ class PlcUdpBridge(Node):
                 raise ValueError('TF position is not finite')
 
             # Şartname: integer(metre * 100)
-            x_cm = int(x_m * 100.0)
-            y_cm = int(y_m * 100.0)
+            x_scaled = int(x_m * 100.0)
+            y_scaled = int(y_m * 100.0)
 
             # Int16 sınırı
-            x_cm = max(-32768, min(32767, x_cm))
-            y_cm = max(-32768, min(32767, y_cm))
+            x_scaled = max(-32768, min(32767, x_scaled))
+            y_scaled = max(-32768, min(32767, y_scaled))
 
-            self.last_position_cm = (x_cm, y_cm)
-            return self.last_position_cm
+            self.last_position_scaled = (x_scaled, y_scaled)
+            return self.last_position_scaled
 
         except (TransformException, ValueError, OverflowError) as error:
             now = time.monotonic()
             if self.last_tf_warning is None or now - self.last_tf_warning >= 5.0:
                 self.get_logger().warning(
-                    f'TF unavailable; using {self.last_position_cm} cm: {error}'
+                    'TF unavailable; using last scaled position '
+                    f'{self.last_position_scaled} (metre * 100): {error}'
                 )
                 self.last_tf_warning = now
-            return self.last_position_cm
+            return self.last_position_scaled
 
     # =====================================================
     # PLC'YE 7 BYTE GÖNDER
     # =====================================================
 
     def send_packet(self):
-        x_cm, y_cm = self.get_robot_position_cm()
+        x_scaled, y_scaled = self.get_robot_position_scaled()
 
         try:
             packet = struct.pack(
@@ -274,8 +288,8 @@ class PlcUdpBridge(Node):
                 self.robot_status,
                 self.pickup_station,
                 self.dropoff_station,
-                x_cm,
-                y_cm
+                x_scaled,
+                y_scaled
             )
 
             if len(packet) != 7:
@@ -285,6 +299,9 @@ class PlcUdpBridge(Node):
                 return
 
             self.socket.send(packet)
+            raw_tx_msg = UInt8MultiArray()
+            raw_tx_msg.data = list(packet)
+            self.raw_tx_pub.publish(raw_tx_msg)
             self.tx_packet_count += 1
 
             self.get_logger().info(
@@ -422,7 +439,8 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':

@@ -1,0 +1,53 @@
+ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyACM0
+-
+ros2 run robot_state_publisher robot_state_publisher --ros-args -p robot_description:="$(xacro ~/ros2_ws/src/bringup/description/my_car_karakuri.xacro)"
+
+ros2 run pulsar_cpp_code tick_to_odom --ros-args --params-file /home/pulsar_robotic/ros2_ws/src/bringup/config/tick_to_odom.yaml
+
+ros2 launch sllidar_ros2 view_sllidar_a3_launch.py frame_id:=lidar_top_link
+ros2 launch sllidar_ros2 sllidar_a3_launch.py frame_id:=lidar_top_link
+
+ros2 run laser_filters scan_to_scan_filter_chain   --ros-args   --params-file ~/ros2_ws/src/bringup/config/laser_filter.yaml   -r scan:=/scan   -r scan_filtered:=/scan_filtered
+---
+ros2 run amr_mission_controller graph_receiver_node   --ros-args   -p map_frame:=map   -p base_frame:=base_footprint
+
+ros2 launch plc_udp_bridge plc_udp_bridge.launch.py   plc_ip:=192.168.100.100   start_adapter:=true
+
+
+ros2 run pulsar_py_code qr_serial_publisher --ros-args -p port:=/dev/ttyACM1
+
+
+------------------
+ros2 launch bringup amr_nav.launch.py
+-----------------
+SLAM;
+ros2 launch slam_toolbox online_async_launch.py
+-----------------
+NAV2;
+ros2 launch nav2_bringup bringup_launch.py   map:=/home/pulsar_robotic/ros2_ws/src/bringup/map/yedek/map_1775547793.yaml
+ros2 launch nav2_bringup bringup_launch.py   map:=/home/pulsar_robotic/ros2_ws/src/bringup/map/my_map.yaml
+-----------------
+KAMERA
+ros2 launch realsense2_camera rs_launch.py enable_depth:=false enable_color:=true
+
+ros2 launch pulsar_color_line_following color_line_following.launch.py \
+show_image:=true \
+gstreamer_enabled:=true \
+gstreamer_host:=192.168.100.20 \
+gstreamer_port:=5000
+-----------------
+ros2 run nav2_collision_monitor collision_monitor \
+  --ros-args \
+  --params-file /opt/ros/humble/share/nav2_collision_monitor/params/collision_monitor_params.yaml
+ros2 lifecycle set /collision_monitor configure
+ros2 lifecycle set /collision_monitor activate
+-----------------
+ros2 param set /amcl use_sim_time true
+ros2 param set /controller_server use_sim_time true
+ros2 param set /planner_server use_sim_time true
+ros2 param set /bt_navigator use_sim_time true
+
+ros2 topic pub /amr/mission_command std_msgs/msg/String "{data: 'TEST_LIFT_UP'}"
+
+ros2 topic pub --once /amr/mission_command std_msgs/msg/String "{data: 'TEST_LIFT_UP'}"
+

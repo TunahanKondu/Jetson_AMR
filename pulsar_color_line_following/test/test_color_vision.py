@@ -3,7 +3,9 @@
 import cv2
 import numpy as np
 
-from pulsar_color_line_following.color_vision import detect_orange_line
+from pulsar_color_line_following.color_vision import (
+    detect_orange_line,
+)
 
 
 def make_frame(center):

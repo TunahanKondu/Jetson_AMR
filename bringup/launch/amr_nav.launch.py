@@ -20,10 +20,9 @@ def generate_launch_description():
         "~/ros2_ws/src/bringup/config/laser_filter.yaml"
     )
 
-    collision_monitor_params = (
-        "/opt/ros/humble/share/nav2_collision_monitor/"
-        "params/collision_monitor_params.yaml"
-    )
+    collision_monitor_params = os.path.expanduser(
+    "~/ros2_ws/src/bringup/config/collision_monitor.yaml"
+	)
 
     nav2_params = (
         "/opt/ros/humble/share/nav2_bringup/"
@@ -112,7 +111,7 @@ def generate_launch_description():
 
         parameters=[
             {
-                "use_sim_time": True,
+                "use_sim_time": False,
                 "autostart": True,
                 "node_names": ["collision_monitor"],
             }

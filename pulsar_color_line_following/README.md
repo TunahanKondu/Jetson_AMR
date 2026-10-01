@@ -1,11 +1,55 @@
-# Pulsar color line following
+# pulsar_color_line_following
 
-First implementation of orange center stripe tracking for the start area in the 2026 SRU additional technical specification (Figure 5). The document states QR size as 50 x 50 mm and start segment length as 1.5 m. Individual orange/blue stripe widths are not dimensioned; HSV and contour geometry are adjustable rather than based on a fixed pixel width.
+ROS 2 Humble package for orange-line detection, alignment-safe motion control,
+encoder-distance completion and optional RTP/H.264 streaming.
 
-Run `ros2 launch pulsar_color_line_following color_line_following.launch.py show_image:=true` to open a local preview window after building and sourcing the workspace. Use `show_image:=false` for headless operation. Publish `/robot_action` (`std_msgs/String`) with `LINE_START` to begin and `LINE_STOP` to stop. The detector publishes `/color_line_detected` and `/color_line_error`; the controller publishes `/cmd_vel`. The debug image is `/color_line_debug_image/compressed` and is generated only when subscribed.
+Version 0.1.4 makes `LINE_START` idempotent and publishes
+`LINE_START_ACCEPTED` only after the controller and detector have both started
+and the first camera frame has been processed. Retried commands therefore do
+not reset PID or encoder-distance state. `LINE_STOP` publishes separate
+detector and controller acknowledgements after streaming and motion stop.
 
-The orange HSV range, camera topic, ROI and control gains are ROS parameters. Tune the HSV bounds with a real camera image because arena lighting and camera white balance are unknown. The ROI ends at 88% of image height to reduce interference from the QR at the start of the stripe. The old and new controllers both publish `/cmd_vel`; run only one controller at a time.
+## Build
 
-Send the actions with `ros2 topic pub --once /robot_action std_msgs/msg/String "{data: LINE_START}"` and `ros2 topic pub --once /robot_action std_msgs/msg/String "{data: LINE_STOP}"`.
+```bash
+cd ~/ros2_ws
+colcon build --packages-select pulsar_color_line_following --symlink-install
+source install/setup.bash
+```
 
-Reverse drive: the launch defaults to `linear_direction:=-1.0`, so an active track command has negative `linear.x`. The angular correction keeps the existing `steering_sign:=-1.0` until its direction is checked on the robot. Set `steering_sign:=1.0` if a line on the right causes the vehicle to steer away from it. Command sign depends on camera orientation and drivetrain configuration.
+## Launch with streaming
+
+```bash
+ros2 launch pulsar_color_line_following color_line_following.launch.py \
+  show_image:=true \
+  gstreamer_enabled:=true \
+  gstreamer_host:=172.20.10.6 \
+  gstreamer_port:=5000
+```
+
+The RealSense ROS driver must publish
+`/camera/camera/color/image_raw`. `LINE_START` starts line detection, motion
+control and GStreamer streaming. `LINE_STOP` stops all three:
+
+```bash
+ros2 topic pub --once /robot_action std_msgs/msg/String "{data: 'LINE_START'}"
+```
+
+Successful startup is acknowledged on `/amr/robot_action_result`:
+
+```text
+LINE_START_ACCEPTED
+```
+
+Successful stop produces both:
+
+```text
+LINE_DETECTOR_STOPPED
+LINE_CONTROLLER_STOPPED
+```
+
+Receiver:
+
+```bash
+gst-launch-1.0 udpsrc port=5000 caps="application/x-rtp,media=video,encoding-name=H264,payload=96" ! rtph264depay ! avdec_h264 ! videoconvert ! autovideosink sync=false
+```

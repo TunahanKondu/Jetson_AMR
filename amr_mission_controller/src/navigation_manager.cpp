@@ -460,7 +460,8 @@ void NavigationManager::sendNextGraphWaypoint()
 
                 if (arrival_action_handler_ &&
                     arrival_action_handler_(
-                        arrivalAction))
+                        arrivalAction,
+                        waypointNodeId))
                 {
                     awaiting_arrival_action_ =
                         true;

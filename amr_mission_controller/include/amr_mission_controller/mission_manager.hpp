@@ -32,7 +32,11 @@ enum class MissionStage
 
     NavigatingToDropoff,
     DropoffLineFollowing,
-    Lowering
+    Lowering,
+
+    // Keep this value after the existing stages so the PLC stage numbers
+    // 1-6 remain backward compatible. Stage 7 means returning to START.
+    ReturningToStart
 };
 
 
@@ -108,6 +112,8 @@ public:
 
     MissionStage missionStage() const;
 
+    bool carryingLoad() const;
+
 
     std::string missionId() const;
 
@@ -169,6 +175,10 @@ private:
 
 
     bool emergency_stop_active_ =
+        false;
+
+
+    bool carrying_load_ =
         false;
 
 

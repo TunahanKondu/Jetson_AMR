@@ -51,7 +51,7 @@ public:
 
 
     using ArrivalActionHandler =
-        std::function<bool(LocationAction)>;
+        std::function<bool(LocationAction, int)>;
 
     using MotionAllowedHandler =
         std::function<bool()>;

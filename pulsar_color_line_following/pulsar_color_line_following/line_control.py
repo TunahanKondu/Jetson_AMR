@@ -1,4 +1,6 @@
-"""PID steering controller independent from ROS interfaces."""
+"""Line-control and encoder calculations independent from ROS interfaces."""
+
+import math
 
 
 class PIDController:
@@ -80,6 +82,33 @@ def calculate_linear_speed(
     return _clamp(target_speed, minimum_speed, maximum_speed)
 
 
+def alignment_gate(
+    error,
+    currently_aligning,
+    enter_threshold,
+    exit_threshold,
+):
+    """Return whether forward motion must remain blocked for alignment.
+
+    Two thresholds provide hysteresis: a tracking robot enters alignment-only
+    mode at the wider threshold, then stays there until the tighter threshold
+    is reached. This prevents rapid stop/go switching near one boundary.
+    """
+    enter_threshold = abs(float(enter_threshold))
+    exit_threshold = abs(float(exit_threshold))
+    if exit_threshold < 0.0 or enter_threshold <= 0.0:
+        raise ValueError('alignment thresholds must be positive')
+    if exit_threshold >= enter_threshold:
+        raise ValueError(
+            'alignment exit threshold must be smaller than enter threshold'
+        )
+
+    absolute_error = abs(float(error))
+    if currently_aligning:
+        return absolute_error > exit_threshold
+    return absolute_error >= enter_threshold
+
+
 def slew_rate_limit(target, current, maximum_rate, dt):
     """Limit how quickly a command may change without overshooting it."""
     target = float(target)
@@ -95,3 +124,21 @@ def slew_rate_limit(target, current, maximum_rate, dt):
     maximum_change = maximum_rate * dt
     change = _clamp(target - current, -maximum_change, maximum_change)
     return current + change
+
+
+def calculate_wheel_distance(
+    left_tick_delta,
+    right_tick_delta,
+    wheel_radius,
+    ticks_per_revolution,
+):
+    """Return travelled distance from the average absolute wheel tick delta."""
+    wheel_radius = float(wheel_radius)
+    ticks_per_revolution = float(ticks_per_revolution)
+    if wheel_radius <= 0.0 or ticks_per_revolution <= 0.0:
+        raise ValueError('wheel radius and ticks per revolution must be positive')
+
+    average_ticks = 0.5 * (
+        abs(float(left_tick_delta)) + abs(float(right_tick_delta))
+    )
+    return average_ticks * (2.0 * math.pi * wheel_radius) / ticks_per_revolution

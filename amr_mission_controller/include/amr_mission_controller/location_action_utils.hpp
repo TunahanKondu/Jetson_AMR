@@ -24,6 +24,12 @@ inline std::string locationActionToString(LocationAction action)
         case LocationAction::LiftDown:
             return "LiftDown";
 
+        case LocationAction::DoorK1:
+            return "DoorK1";
+
+        case LocationAction::DoorK2:
+            return "DoorK2";
+
         case LocationAction::None:
         default:
             return "None";
@@ -51,6 +57,12 @@ inline bool locationActionFromString(
 
     else if (name == "LiftDown")
         action = LocationAction::LiftDown;
+
+    else if (name == "DoorK1")
+        action = LocationAction::DoorK1;
+
+    else if (name == "DoorK2")
+        action = LocationAction::DoorK2;
 
     else
         return false;

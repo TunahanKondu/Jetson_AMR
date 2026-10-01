@@ -98,6 +98,16 @@ bool GraphManager::loadGraph(
                 return false;
             }
 
+            // Backward compatibility for graphs produced by the former
+            // name-based K1/K2 model.
+            if (node.name == "K1") {
+                node.name = "N" + std::to_string(node.id);
+                node.arrivalAction = LocationAction::DoorK1;
+            } else if (node.name == "K2") {
+                node.name = "N" + std::to_string(node.id);
+                node.arrivalAction = LocationAction::DoorK2;
+            }
+
 
             if (!std::isfinite(node.x) ||
                 !std::isfinite(node.y)) {

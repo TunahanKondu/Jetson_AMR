@@ -5,7 +5,7 @@ package_name = 'plc_udp_bridge'
 
 setup(
     name=package_name,
-    version='0.0.0',
+    version='0.1.0',
     packages=find_packages(exclude=['test']),
     data_files=[
         ('share/ament_index/resource_index/packages',
@@ -18,8 +18,8 @@ setup(
     zip_safe=True,
     maintainer='pulsar_robotic',
     maintainer_email='tkondu7042@gmail.com',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    description='Bidirectional PLC UDP protocol and ROS 2 mission adapter',
+    license='Apache-2.0',
     extras_require={
         'test': [
             'pytest',
