@@ -133,6 +133,9 @@ bool MissionManager::createManualMission(
         MissionStage::None;
 
 
+    carrying_load_ = false;
+
+
     setMissionState(
         MissionState::
             PendingApproval);
@@ -195,6 +198,9 @@ void MissionManager::startMission()
     mission_stage_ =
         MissionStage::
             NavigatingToPickup;
+
+
+    carrying_load_ = false;
 
 
     setMissionState(
@@ -318,6 +324,40 @@ handleFinalStationReached(
 
         return;
     }
+
+
+    // ============================================================
+    // START STATION REACHED
+    // The mission is completed only after the empty robot returns
+    // to the canonical START station.
+    // ============================================================
+
+    if (mission_stage_ ==
+            MissionStage::
+                ReturningToStart &&
+
+        stationName == "START")
+    {
+        mission_stage_ =
+            MissionStage::None;
+
+
+        setActiveOperation(
+            "Mission completed at START");
+
+
+        setMissionState(
+            MissionState::Completed);
+
+
+        RCLCPP_INFO(
+            node_->get_logger(),
+            "Mission %s completed after returning to START",
+            mission_.missionId.c_str());
+
+
+        return;
+    }
 }
 
 
@@ -385,6 +425,9 @@ handleRobotActionResult(
         mission_stage_ ==
             MissionStage::Lifting)
     {
+        carrying_load_ = true;
+
+
         mission_stage_ =
             MissionStage::
                 NavigatingToDropoff;
@@ -472,28 +515,55 @@ handleRobotActionResult(
 
     // ============================================================
     // LIFT DOWN COMPLETE
+    // Keep the mission running and return the empty robot to START.
     // ============================================================
 
     if (action == "LIFT_DOWN_COMPLETE" &&
         mission_stage_ ==
             MissionStage::Lowering)
     {
+        carrying_load_ = false;
+
+
         mission_stage_ =
-            MissionStage::None;
+            MissionStage::
+                ReturningToStart;
 
 
         setActiveOperation(
-            "Mission completed");
-
-
-        setMissionState(
-            MissionState::Completed);
+            "Returning to START");
 
 
         RCLCPP_INFO(
             node_->get_logger(),
-            "Mission %s completed",
+            "Load lowered. Mission %s returning to START",
             mission_.missionId.c_str());
+
+
+        if (!navigate_to_station_handler_ ||
+            !navigate_to_station_handler_(
+                "START"))
+        {
+            mission_stage_ =
+                MissionStage::None;
+
+
+            setActiveOperation(
+                "Navigation to START failed");
+
+
+            setMissionState(
+                MissionState::
+                    MissionError);
+
+
+            RCLCPP_ERROR(
+                node_->get_logger(),
+                "Could not start return navigation to START");
+
+
+            return;
+        }
 
 
         return;
@@ -681,6 +751,9 @@ void MissionManager::cancelMission()
         MissionData{};
 
 
+    carrying_load_ = false;
+
+
     setActiveOperation(
         "Idle");
 
@@ -781,6 +854,12 @@ MissionStage MissionManager::
 missionStage() const
 {
     return mission_stage_;
+}
+
+
+bool MissionManager::carryingLoad() const
+{
+    return carrying_load_;
 }
 
 

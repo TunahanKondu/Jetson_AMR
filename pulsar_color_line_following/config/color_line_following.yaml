@@ -1,0 +1,60 @@
+color_line_detector:
+  ros__parameters:
+    image_topic: /camera/camera/color/image_raw
+    roi_start_ratio: 0.45
+    roi_end_ratio: 0.88
+    hsv_lower: [5, 80, 70]
+    hsv_upper: [25, 255, 255]
+    min_area_ratio: 0.0005
+    minimum_height_ratio: 0.18
+    maximum_center_jump_ratio: 0.25
+    tracking_reset_frames: 5
+    publish_debug_image: true
+    show_image: false
+    jpeg_quality: 65
+    action_result_topic: /amr/robot_action_result
+    gstreamer_enabled: false
+    gstreamer_host: 127.0.0.1
+    gstreamer_port: 5000
+    gstreamer_bitrate_kbps: 2000
+    gstreamer_fps: 30.0
+
+color_line_controller:
+  ros__parameters:
+    control_frequency: 30.0
+    # Softer centre-seeking tune for the original controller algorithm.
+    linear_speed: 0.010
+    minimum_linear_speed: 0.004
+    maximum_angular_speed: 0.10
+    maximum_linear_acceleration: 0.02
+    maximum_angular_acceleration: 0.30
+    slowdown_gain: 0.90
+    # At error=0.08 or above, stop forward motion and re-enter centring even
+    # if the robot was already tracking. Release only inside the tight band.
+    alignment_enter_error: 0.08
+    alignment_exit_error: 0.03
+    alignment_stable_time: 0.25
+    # Ignore camera/contour noise around the exact centre. Inside this band
+    # angular.z is forced to zero and the PID state is cleared.
+    steering_deadband_error: 0.03
+    detection_timeout: 0.20
+    # Strong proportional correction; integral is disabled so it cannot keep
+    # steering after the line has reached the centre deadband.
+    kp: 0.65
+    ki: 0.0
+    kd: 0.025
+    integral_limit: 0.30
+    linear_direction: -1.0
+    steering_sign: -1.0
+    cmd_vel_topic: /cmd_vel
+    wheel_ticks_topic: /wheel_ticks
+    mission_status_topic: /amr/mission_status_json
+    action_result_topic: /amr/robot_action_result
+    wheel_radius_m: 0.10
+    ticks_per_revolution: 1100.0
+    dropoff_target_distance_m: 1.5
+    straight_fallback_start_distance_m: 1.3
+    line_lost_straight_speed: 0.006
+    wheel_ticks_timeout: 0.50
+    maximum_tick_jump: 500
+

@@ -1,8 +1,8 @@
-tick_to_odom_node:
+ticks_to_odom_node:
   ros__parameters:
     wheel_radius: 0.10
-    wheel_separation: 0.67
-    ticks_per_rev: 5000.0
+    wheel_separation: 0.72
+    ticks_per_rev: 1100.0
     left_sign:  1.0
     right_sign: 1.0
     odom_frame: "odom"

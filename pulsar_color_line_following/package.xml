@@ -1,18 +1,25 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>pulsar_color_line_following</name>
-  <version>0.0.0</version>
-  <description>Color line following for the Pulsar robot.</description>
-  <maintainer email="pulsar_robotic@todo.todo">pulsar_robotic</maintainer>
-  <license>TODO</license>
+  <version>0.1.4</version>
+  <description>Orange line detection, safe alignment control and RTP/H.264 streaming.</description>
+  <maintainer email="pulsar@example.com">Pulsar Robotics</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-gi</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>
-  <exec_depend>geometry_msgs</exec_depend>
-  <exec_depend>cv_bridge</exec_depend>
-  <exec_depend>python3-opencv</exec_depend>
-  <exec_depend>python3-numpy</exec_depend>
-  <exec_depend>ros2launch</exec_depend>
+
   <export>
     <build_type>ament_python</build_type>
   </export>

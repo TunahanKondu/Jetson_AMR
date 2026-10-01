@@ -135,6 +135,11 @@ class LineDetectorNode(Node):
             5,
         )
 
+        self.declare_parameter(
+            'reference_y_ratio',
+            0.85,
+        )
+
         # =================================================
         # GStreamer parameters
         # =================================================
@@ -270,6 +275,12 @@ class LineDetectorNode(Node):
             ).value
         )
 
+        self.reference_y_ratio = float(
+            self.get_parameter(
+                'reference_y_ratio'
+            ).value
+        )
+
         # =================================================
         # Read GStreamer parameters
         # =================================================
@@ -385,6 +396,18 @@ class LineDetectorNode(Node):
         self.error_publisher = self.create_publisher(
             Float32,
             'line_error',
+            10,
+        )
+
+        self.angle_error_publisher = self.create_publisher(
+            Float32,
+            'line_angle_error',
+            10,
+        )
+
+        self.offset_px_publisher = self.create_publisher(
+            Float32,
+            'line_offset_px',
             10,
         )
 
@@ -741,6 +764,7 @@ class LineDetectorNode(Node):
             maximum_center_jump_ratio=(
                 self.maximum_center_jump_ratio
             ),
+            reference_y_ratio=self.reference_y_ratio,
         )
 
         detection_finished = time.perf_counter()
@@ -798,6 +822,16 @@ class LineDetectorNode(Node):
                 error_message
             )
 
+        if detection.angle_error_deg is not None:
+            angle_message = Float32()
+            angle_message.data = float(detection.angle_error_deg)
+            self.angle_error_publisher.publish(angle_message)
+
+        if detection.offset_px is not None:
+            offset_message = Float32()
+            offset_message.data = float(detection.offset_px)
+            self.offset_px_publisher.publish(offset_message)
+
         # -------------------------------------------------
         # Does an annotated frame need to exist?
         # -------------------------------------------------
@@ -833,7 +867,7 @@ class LineDetectorNode(Node):
             cv2.putText(
                 debug_frame,
                 f'FPS {self.measured_fps:.1f}',
-                (20, 75),
+                (20, 110),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.7,
                 (0, 255, 255),

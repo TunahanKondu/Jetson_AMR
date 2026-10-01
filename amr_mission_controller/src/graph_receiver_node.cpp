@@ -1,6 +1,7 @@
 #include <rclcpp/rclcpp.hpp>
 
 #include <std_msgs/msg/string.hpp>
+#include <std_msgs/msg/bool.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <nlohmann/json.hpp>
 
@@ -80,7 +81,7 @@ public:
 
         declare_parameter<std::string>(
             "base_frame",
-            "base_link");
+            "base_footprint");
 
 
         // ============================================================
@@ -117,7 +118,7 @@ public:
                 // ----------------------------------------------------
                 // Arrival action handler
                 // ----------------------------------------------------
-                [this](LocationAction action)
+                [this](LocationAction action, int waypointNodeId)
                 {
                     RCLCPP_INFO(
                         this->get_logger(),
@@ -125,10 +126,53 @@ public:
                         static_cast<int>(action));
 
 
-                    // Mission/RobotActionManager is not moved yet.
-                    // Returning false means:
-                    // no special action blocks navigation.
-                    return false;
+                    if (!mission_manager_ ||
+                        mission_manager_->missionState() !=
+                            MissionState::Running)
+                    {
+                        return false;
+                    }
+
+                    std::string doorName;
+                    if (action == LocationAction::DoorK1)
+                        doorName = "K1";
+                    else if (action == LocationAction::DoorK2)
+                        doorName = "K2";
+
+                    if (doorName.empty())
+                    {
+                        return false;
+                    }
+
+                    // Only the door that matches the real load state may
+                    // stop the route. Unloaded robots wait at K2; loaded
+                    // robots wait at K1. The other door is passed without
+                    // withholding the next Nav2 goal.
+                    const bool carryingLoad =
+                        mission_manager_->carryingLoad();
+                    const bool mustWait =
+                        (doorName == "K1" && carryingLoad) ||
+                        (doorName == "K2" && !carryingLoad);
+
+                    if (!mustWait)
+                    {
+                        RCLCPP_INFO(
+                            get_logger(),
+                            "Door %s ignored for current load state (%s)",
+                            doorName.c_str(),
+                            carryingLoad ? "loaded" : "unloaded");
+                        return false;
+                    }
+
+                    automation_waiting_ = true;
+                    waiting_door_ = doorName;
+
+                    RCLCPP_WARN(
+                        get_logger(),
+                        "Waiting at door %s for PLC 1 -> 2 handshake",
+                        waiting_door_.c_str());
+
+                    return true;
                 },
 
                 // ----------------------------------------------------
@@ -154,6 +198,33 @@ public:
             create_publisher<std_msgs::msg::String>(
                 "/robot_action",
                 10);
+
+        lift_accept_timer_ =
+            create_wall_timer(
+                std::chrono::seconds(1),
+                [this]()
+                {
+                    retryPendingLiftAction();
+                });
+        lift_accept_timer_->cancel();
+
+        line_start_accept_timer_ =
+            create_wall_timer(
+                std::chrono::seconds(1),
+                [this]()
+                {
+                    retryPendingLineStart();
+                });
+        line_start_accept_timer_->cancel();
+
+        line_stop_accept_timer_ =
+            create_wall_timer(
+                std::chrono::seconds(1),
+                [this]()
+                {
+                    retryPendingLineStop();
+                });
+        line_stop_accept_timer_->cancel();
 
         cmd_vel_stop_publisher_ =
             create_publisher<geometry_msgs::msg::Twist>(
@@ -190,16 +261,7 @@ public:
                 // Send line/lift commands to the existing robot action topic.
                 [this](const std::string &action)
                 {
-                    std_msgs::msg::String msg;
-                    msg.data = action;
-
-                    robot_action_publisher_->publish(
-                        msg);
-
-                    RCLCPP_INFO(
-                        get_logger(),
-                        "Robot action requested: %s",
-                        action.c_str());
+                    publishRobotActionCommand(action);
                 },
 
                 // Hard motion stop requested by MissionManager.
@@ -330,6 +392,28 @@ public:
                         msg->data);
                 });
 
+        automation_continue_subscription_ =
+            create_subscription<std_msgs::msg::Bool>(
+                "/amr/automation_continue",
+                10,
+                [this](const std_msgs::msg::Bool::SharedPtr msg)
+                {
+                    if (!msg->data || !automation_waiting_ ||
+                        !navigation_manager_)
+                    {
+                        return;
+                    }
+
+                    RCLCPP_INFO(
+                        get_logger(),
+                        "PLC released door %s; navigation continues",
+                        waiting_door_.c_str());
+
+                    automation_waiting_ = false;
+                    waiting_door_.clear();
+                    navigation_manager_->continueAfterArrivalAction();
+                });
+
 
         // Mission/robot action completion input.
         // Examples: LINE_COMPLETE, LIFT_UP_COMPLETE,
@@ -350,6 +434,38 @@ public:
                         get_logger(),
                         "Robot action result received: %s",
                         msg->data.c_str());
+
+                    if (msg->data == "LIFT_UP_ACCEPTED" ||
+                        msg->data == "LIFT_DOWN_ACCEPTED")
+                    {
+                        handleLiftActionAccepted(msg->data);
+                        return;
+                    }
+
+                    if (msg->data == "LINE_START_ACCEPTED")
+                    {
+                        handleLineStartAccepted();
+                        return;
+                    }
+
+                    if (msg->data == "LINE_DETECTOR_STOPPED" ||
+                        msg->data == "LINE_CONTROLLER_STOPPED")
+                    {
+                        handleLineStopAccepted(msg->data);
+                        return;
+                    }
+
+                    if (msg->data == "LIFT_UP_COMPLETE" ||
+                        msg->data == "LIFT_DOWN_COMPLETE")
+                    {
+                        clearPendingLiftAcceptance();
+                    }
+
+                    if (msg->data == "LINE_COMPLETE" ||
+                        msg->data == "ACTION_ERROR")
+                    {
+                        clearPendingLineStartAcceptance();
+                    }
 
                     mission_manager_->handleRobotActionResult(
                         msg->data);
@@ -394,7 +510,7 @@ public:
 
         RCLCPP_INFO(
             get_logger(),
-            "Controller commands: GO <station>, CREATE <A*> <B*>, APPROVE, START, PAUSE, RESUME, CANCEL, STATUS");
+            "Controller commands: GO <station>, CREATE <A*> <B*>, APPROVE, START, PAUSE, RESUME, CANCEL, STATUS, TEST_LINE_START, TEST_LINE_STOP, TEST_LIFT_UP, TEST_LIFT_DOWN, TEST_LIFT_STOP");
 
         RCLCPP_INFO(
             get_logger(),
@@ -407,6 +523,351 @@ public:
 
 
 private:
+
+    void publishRobotActionMessage(const std::string &action)
+    {
+        if (!robot_action_publisher_)
+        {
+            return;
+        }
+
+        std_msgs::msg::String msg;
+        msg.data = action;
+        robot_action_publisher_->publish(msg);
+    }
+
+
+    void publishRobotActionCommand(
+        const std::string &action,
+        const bool testMode = false)
+    {
+        if (action == "LINE_START")
+        {
+            if (pending_line_stop_)
+            {
+                RCLCPP_ERROR(
+                    get_logger(),
+                    "LINE_START rejected: LINE_STOP acceptance is pending");
+                return;
+            }
+
+            pending_line_start_ = true;
+            line_start_accept_attempts_ = 1;
+            line_start_retry_test_mode_ = testMode;
+
+            if (line_start_accept_timer_)
+            {
+                line_start_accept_timer_->reset();
+            }
+
+            publishRobotActionMessage(action);
+
+            RCLCPP_INFO(
+                get_logger(),
+                "Robot action requested: LINE_START; waiting for "
+                "LINE_START_ACCEPTED");
+            return;
+        }
+
+        if (action == "LINE_STOP")
+        {
+            clearPendingLineStartAcceptance();
+            clearPendingLiftAcceptance();
+
+            if (!pending_line_stop_)
+            {
+                pending_line_stop_ = true;
+                line_detector_stopped_ = false;
+                line_controller_stopped_ = false;
+                line_stop_accept_attempts_ = 1;
+
+                if (line_stop_accept_timer_)
+                {
+                    line_stop_accept_timer_->reset();
+                }
+            }
+
+            publishRobotActionMessage(action);
+
+            RCLCPP_WARN(
+                get_logger(),
+                "Robot action requested: LINE_STOP; waiting for detector "
+                "and controller stop acknowledgements");
+            return;
+        }
+
+        if (pending_line_stop_ &&
+            (action == "LIFT_UP" || action == "LIFT_DOWN"))
+        {
+            deferred_action_after_line_stop_ = action;
+            RCLCPP_WARN(
+                get_logger(),
+                "%s deferred until LINE_STOP is accepted",
+                action.c_str());
+            return;
+        }
+
+        publishRobotActionMessage(action);
+
+        RCLCPP_INFO(
+            get_logger(),
+            "Robot action requested: %s",
+            action.c_str());
+
+        if (action != "LIFT_UP" && action != "LIFT_DOWN")
+        {
+            return;
+        }
+
+        pending_lift_action_ = action;
+        lift_accept_attempts_ = 1;
+        lift_retry_test_mode_ = testMode;
+
+        if (lift_accept_timer_)
+        {
+            lift_accept_timer_->reset();
+        }
+
+        RCLCPP_INFO(
+            get_logger(),
+            "Waiting for %s_ACCEPTED",
+            action.c_str());
+    }
+
+
+    void retryPendingLiftAction()
+    {
+        if (pending_lift_action_.empty())
+        {
+            if (lift_accept_timer_)
+            {
+                lift_accept_timer_->cancel();
+            }
+            return;
+        }
+
+        if (!lift_retry_test_mode_ &&
+            (!mission_manager_ ||
+             mission_manager_->missionState() != MissionState::Running))
+        {
+            clearPendingLiftAcceptance();
+            return;
+        }
+
+        ++lift_accept_attempts_;
+        publishRobotActionMessage(pending_lift_action_);
+
+        RCLCPP_WARN(
+            get_logger(),
+            "No %s_ACCEPTED; retrying command (attempt %d)",
+            pending_lift_action_.c_str(),
+            lift_accept_attempts_);
+    }
+
+
+    void handleLiftActionAccepted(const std::string &result)
+    {
+        const std::string expected =
+            pending_lift_action_.empty()
+                ? std::string()
+                : pending_lift_action_ + "_ACCEPTED";
+
+        if (result != expected)
+        {
+            RCLCPP_WARN(
+                get_logger(),
+                "Unexpected lift acceptance: %s (expected: %s)",
+                result.c_str(),
+                expected.empty() ? "none" : expected.c_str());
+            return;
+        }
+
+        RCLCPP_INFO(
+            get_logger(),
+            "%s accepted after %d attempt(s)",
+            pending_lift_action_.c_str(),
+            lift_accept_attempts_);
+
+        clearPendingLiftAcceptance();
+    }
+
+
+    void clearPendingLiftAcceptance()
+    {
+        pending_lift_action_.clear();
+        lift_accept_attempts_ = 0;
+        lift_retry_test_mode_ = false;
+
+        if (lift_accept_timer_)
+        {
+            lift_accept_timer_->cancel();
+        }
+    }
+
+
+    void retryPendingLineStart()
+    {
+        if (!pending_line_start_)
+        {
+            if (line_start_accept_timer_)
+            {
+                line_start_accept_timer_->cancel();
+            }
+            return;
+        }
+
+        if (!line_start_retry_test_mode_ &&
+            (!mission_manager_ ||
+             mission_manager_->missionState() != MissionState::Running))
+        {
+            clearPendingLineStartAcceptance();
+            return;
+        }
+
+        ++line_start_accept_attempts_;
+        publishRobotActionMessage("LINE_START");
+
+        RCLCPP_WARN(
+            get_logger(),
+            "No LINE_START_ACCEPTED; retrying LINE_START (attempt %d)",
+            line_start_accept_attempts_);
+    }
+
+
+    void handleLineStartAccepted()
+    {
+        if (!pending_line_start_)
+        {
+            RCLCPP_WARN(
+                get_logger(),
+                "Unexpected LINE_START_ACCEPTED; no LINE_START is pending");
+            return;
+        }
+
+        RCLCPP_INFO(
+            get_logger(),
+            "LINE_START accepted after %d attempt(s)",
+            line_start_accept_attempts_);
+
+        clearPendingLineStartAcceptance();
+    }
+
+
+    void clearPendingLineStartAcceptance()
+    {
+        pending_line_start_ = false;
+        line_start_accept_attempts_ = 0;
+        line_start_retry_test_mode_ = false;
+
+        if (line_start_accept_timer_)
+        {
+            line_start_accept_timer_->cancel();
+        }
+    }
+
+
+    void retryPendingLineStop()
+    {
+        if (!pending_line_stop_)
+        {
+            if (line_stop_accept_timer_)
+            {
+                line_stop_accept_timer_->cancel();
+            }
+            return;
+        }
+
+        ++line_stop_accept_attempts_;
+        publishRobotActionMessage("LINE_STOP");
+
+        RCLCPP_WARN(
+            get_logger(),
+            "LINE_STOP not fully accepted; retrying (attempt %d, "
+            "detector=%s, controller=%s)",
+            line_stop_accept_attempts_,
+            line_detector_stopped_ ? "stopped" : "waiting",
+            line_controller_stopped_ ? "stopped" : "waiting");
+    }
+
+
+    void handleLineStopAccepted(const std::string &result)
+    {
+        if (!pending_line_stop_)
+        {
+            RCLCPP_WARN(
+                get_logger(),
+                "Unexpected %s; no LINE_STOP is pending",
+                result.c_str());
+            return;
+        }
+
+        if (result == "LINE_DETECTOR_STOPPED")
+        {
+            line_detector_stopped_ = true;
+        }
+        else if (result == "LINE_CONTROLLER_STOPPED")
+        {
+            line_controller_stopped_ = true;
+        }
+
+        if (!line_detector_stopped_ || !line_controller_stopped_)
+        {
+            RCLCPP_INFO(
+                get_logger(),
+                "LINE_STOP partially accepted: detector=%s, controller=%s",
+                line_detector_stopped_ ? "stopped" : "waiting",
+                line_controller_stopped_ ? "stopped" : "waiting");
+            return;
+        }
+
+        const int attempts = line_stop_accept_attempts_;
+        const std::string deferredAction =
+            deferred_action_after_line_stop_;
+
+        clearPendingLineStopAcceptance();
+
+        RCLCPP_INFO(
+            get_logger(),
+            "LINE_STOP accepted by detector and controller after %d "
+            "attempt(s)",
+            attempts);
+
+        if (deferredAction.empty())
+        {
+            return;
+        }
+
+        if (!mission_manager_ ||
+            mission_manager_->missionState() != MissionState::Running)
+        {
+            RCLCPP_WARN(
+                get_logger(),
+                "Deferred %s discarded because mission is not running",
+                deferredAction.c_str());
+            return;
+        }
+
+        RCLCPP_INFO(
+            get_logger(),
+            "LINE_STOP confirmed; publishing deferred %s",
+            deferredAction.c_str());
+        publishRobotActionCommand(deferredAction);
+    }
+
+
+    void clearPendingLineStopAcceptance()
+    {
+        pending_line_stop_ = false;
+        line_detector_stopped_ = false;
+        line_controller_stopped_ = false;
+        line_stop_accept_attempts_ = 0;
+        deferred_action_after_line_stop_.clear();
+
+        if (line_stop_accept_timer_)
+        {
+            line_stop_accept_timer_->cancel();
+        }
+    }
 
     void publishMissionStatus()
     {
@@ -440,6 +901,24 @@ private:
 
         status["statusText"] =
             mission_manager_->missionStatusText();
+
+        if (automation_waiting_ &&
+            (!navigation_manager_ ||
+             !navigation_manager_->navigationActive() ||
+             mission_manager_->missionState() != MissionState::Running))
+        {
+            automation_waiting_ = false;
+            waiting_door_.clear();
+        }
+
+        status["carryingLoad"] =
+            mission_manager_->carryingLoad();
+
+        status["automationWaiting"] =
+            automation_waiting_;
+
+        status["waitingDoor"] =
+            waiting_door_;
 
         // Navigation state is mirrored to the GUI as well.
         // This covers both mission navigation and direct GO <station> navigation.
@@ -1083,6 +1562,63 @@ private:
 
 
         // ============================================================
+        // Line/lift acceptance and retry test commands.
+        // These commands exercise the real /robot_action publisher and
+        // ACCEPTED retry timer without requiring a running mission.
+        // ============================================================
+
+        if (command == "TEST_LINE_START")
+        {
+            RCLCPP_WARN(
+                get_logger(),
+                "TEST MODE: LINE_START retry test started");
+
+            publishRobotActionCommand("LINE_START", true);
+            return;
+        }
+
+        if (command == "TEST_LINE_STOP")
+        {
+            RCLCPP_WARN(
+                get_logger(),
+                "TEST MODE: LINE_STOP retry test started");
+
+            publishRobotActionCommand("LINE_STOP", true);
+            return;
+        }
+
+        if (command == "TEST_LIFT_UP")
+        {
+            RCLCPP_WARN(
+                get_logger(),
+                "TEST MODE: LIFT_UP retry test started");
+
+            publishRobotActionCommand("LIFT_UP", true);
+            return;
+        }
+
+        if (command == "TEST_LIFT_DOWN")
+        {
+            RCLCPP_WARN(
+                get_logger(),
+                "TEST MODE: LIFT_DOWN retry test started");
+
+            publishRobotActionCommand("LIFT_DOWN", true);
+            return;
+        }
+
+        if (command == "TEST_LIFT_STOP")
+        {
+            RCLCPP_WARN(
+                get_logger(),
+                "TEST MODE: lift retry test stopped");
+
+            clearPendingLiftAcceptance();
+            return;
+        }
+
+
+        // ============================================================
         // Direct station navigation: GO <station>
         //
         // This is NOT a mission. Jetson NavigationManager owns it.
@@ -1703,12 +2239,51 @@ private:
         std_msgs::msg::String>::SharedPtr
         robot_action_result_subscription_;
 
+    rclcpp::Subscription<
+        std_msgs::msg::Bool>::SharedPtr
+        automation_continue_subscription_;
+
     rclcpp::Publisher<
         std_msgs::msg::String>::SharedPtr
         mission_status_publisher_;
 
     rclcpp::TimerBase::SharedPtr
         mission_status_timer_;
+
+    rclcpp::TimerBase::SharedPtr
+        lift_accept_timer_;
+
+    rclcpp::TimerBase::SharedPtr
+        line_start_accept_timer_;
+
+    rclcpp::TimerBase::SharedPtr
+        line_stop_accept_timer_;
+
+    std::string pending_lift_action_;
+
+    int lift_accept_attempts_ = 0;
+
+    bool lift_retry_test_mode_ = false;
+
+    bool pending_line_start_ = false;
+
+    int line_start_accept_attempts_ = 0;
+
+    bool line_start_retry_test_mode_ = false;
+
+    bool pending_line_stop_ = false;
+
+    bool line_detector_stopped_ = false;
+
+    bool line_controller_stopped_ = false;
+
+    int line_stop_accept_attempts_ = 0;
+
+    std::string deferred_action_after_line_stop_;
+
+    bool automation_waiting_ = false;
+
+    std::string waiting_door_;
 
 
     // ================================================================
@@ -1799,4 +2374,3 @@ int main(
 
     return 0;
 }
-

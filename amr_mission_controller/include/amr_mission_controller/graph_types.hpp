@@ -10,7 +10,9 @@ enum class LocationAction
     OpenDoor,
     CloseDoor,
     LiftUp,
-    LiftDown
+    LiftDown,
+    DoorK1,
+    DoorK2
 };
 
 struct GraphNode

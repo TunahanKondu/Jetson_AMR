@@ -77,13 +77,20 @@ def detect_orange_line(
 
 
 def draw_detection(frame, detection):
-    """Annotate a copy of the camera frame."""
+    """Draw the fixed robot axis and the detected stripe centre."""
     image = frame.copy()
     height, width = image.shape[:2]
     cv2.rectangle(image, (0, detection.roi_top),
                   (width - 1, detection.roi_bottom - 1), (255, 0, 0), 2)
-    cv2.line(image, (width // 2, detection.roi_top),
-             (width // 2, detection.roi_bottom), (0, 255, 255), 2)
+    # Fixed camera/robot centre axis. The controller drives the detected red
+    # stripe-centre point onto this yellow line using lateral offset only.
+    cv2.line(
+        image,
+        (width // 2, detection.roi_top),
+        (width // 2, detection.roi_bottom),
+        (0, 255, 255),
+        2,
+    )
     if detection.center is None:
         cv2.putText(image, 'ORANGE LINE NOT FOUND', (20, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
@@ -91,7 +98,11 @@ def draw_detection(frame, detection):
         contour = detection.contour.copy()
         contour[:, 0, 1] += detection.roi_top
         cv2.drawContours(image, [contour], -1, (0, 255, 0), 2)
-        cv2.circle(image, detection.center, 6, (0, 0, 255), -1)
-        cv2.putText(image, f'ORANGE error={detection.error:+.3f}', (20, 40),
+        # Moving measurement point: always located at the detected orange
+        # stripe centre. Successful centring puts it on the yellow axis.
+        cv2.circle(image, detection.center, 7, (0, 0, 255), -1)
+        cv2.putText(image, f'ORANGE offset={detection.error:+.3f}', (20, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
     return image
+

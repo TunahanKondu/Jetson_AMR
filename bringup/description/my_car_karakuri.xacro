@@ -2,11 +2,9 @@
 <robot name="karakuri" xmlns:xacro="http://ros.org/wiki/xacro">
 
 
-<xacro:property name="box_length_col" value="1.20"/>
-
-<xacro:property name="box_length" value="0.90"/>
-<xacro:property name="box_width" value="0.63"/>
-<xacro:property name="box_heigh" value="0.40"/>
+<xacro:property name="box_length" value="1.33"/>
+<xacro:property name="box_width" value="0.82"/>
+<xacro:property name="box_heigh" value="0.45"/>
 <xacro:property name="sphere_wheel_radius" value="0.05"/>
 <xacro:property name="wheel_radius" value="0.1"/>
 <xacro:property name="wheel_length" value="0.05"/>
@@ -74,7 +72,7 @@
     <collision>
         <origin xyz="0 0 ${box_heigh / 2}" rpy="0 0 0"/>
         <geometry>
-            <box size="${box_length_col} ${box_width} ${box_heigh}"/>
+            <box size="${box_length} ${box_width} ${box_heigh}"/>
         </geometry>
     </collision>   
 
@@ -147,7 +145,7 @@
 <joint name="base_lidar_base_joint" type="fixed">
     <parent link="base_link" ></parent>
     <child link="lidar_base_link"></child>
-    <origin xyz="${(box_length/2)} 0 ${box_heigh}" rpy="0 0 0"></origin>
+    <origin xyz="${(box_length/2) - 0.08} 0 ${box_heigh}" rpy="0 0 ${pi}"></origin>
     <axis xyz="0 1 0"></axis>
 </joint>
 
@@ -237,7 +235,7 @@
         name="gz::sim::systems::DiffDrive">
         <left_joint>base_middle_wheel_left_joint</left_joint>
         <right_joint>base_middle_wheel_right_joint</right_joint>
-        <wheel_separation>0.63</wheel_separation>
+        <wheel_separation>0.71</wheel_separation>
         <wheel_radius>0.1</wheel_radius>
         <frame_id>odom</frame_id>
         <child_frame_id>base_footprint</child_frame_id>

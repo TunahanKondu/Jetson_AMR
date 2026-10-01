@@ -43,7 +43,14 @@ class LineControllerNode(Node):
         self.declare_parameter('kd', 0.08)
         self.declare_parameter('integral_limit', 0.5)
         self.declare_parameter('steering_sign', -1.0)
-        self.declare_parameter('enabled_on_start', True)
+        # Rear camera + reverse line-following mode.
+        # linear_speed remains a positive magnitude; reverse_mode applies the sign.
+        self.declare_parameter('reverse_mode', True)
+        # Reverse driving requires the yaw correction to be inverted relative to
+        # the same image-space error used for forward driving. Keep this
+        # configurable because camera mounting/image mirroring can change it.
+        self.declare_parameter('reverse_steering_multiplier', -1.0)
+        self.declare_parameter('enabled_on_start', False)
         self.declare_parameter('minimum_linear_speed', 0.01)
         self.declare_parameter('slowdown_gain', 0.8)
         self.declare_parameter('maximum_linear_acceleration', 0.05)
@@ -82,7 +89,11 @@ class LineControllerNode(Node):
         self.ki = self.get_parameter('ki').value
         self.kd = self.get_parameter('kd').value
         self.integral_limit = self.get_parameter('integral_limit').value
-        self.steering_sign = self.get_parameter('steering_sign').value
+        self.steering_sign = float(self.get_parameter('steering_sign').value)
+        self.reverse_mode = bool(self.get_parameter('reverse_mode').value)
+        self.reverse_steering_multiplier = float(
+            self.get_parameter('reverse_steering_multiplier').value
+        )
         self.enabled = self.get_parameter('enabled_on_start').value
         self.minimum_linear_speed = self.get_parameter(
             'minimum_linear_speed'
@@ -196,6 +207,13 @@ class LineControllerNode(Node):
         self.get_logger().info(
             f'Controller enabled: {self.enabled}'
         )
+        self.get_logger().info(
+            'Line-follow direction: ' +
+            ('REVERSE (linear.x < 0)' if self.reverse_mode else 'FORWARD (linear.x > 0)')
+        )
+        self.get_logger().info(
+            f'reverse_steering_multiplier: {self.reverse_steering_multiplier}'
+        )
 
     def error_callback(self, msg):
         self.latest_error = float(msg.data)
@@ -233,15 +251,23 @@ class LineControllerNode(Node):
             return
 
         dt = max(dt, 1e-6)
-        target_angular_velocity = self.steering_sign * self.pid.update(
-            self.latest_error,
-            dt,
+        steering_multiplier = (
+            self.reverse_steering_multiplier if self.reverse_mode else 1.0
         )
-        target_linear_velocity = calculate_linear_speed(
+        target_angular_velocity = (
+            self.steering_sign
+            * steering_multiplier
+            * self.pid.update(self.latest_error, dt)
+        )
+
+        speed_magnitude = calculate_linear_speed(
             error=self.latest_error,
             maximum_speed=self.linear_speed,
             minimum_speed=self.minimum_linear_speed,
             slowdown_gain=self.slowdown_gain,
+        )
+        target_linear_velocity = (
+            -abs(speed_magnitude) if self.reverse_mode else abs(speed_magnitude)
         )
         linear_velocity = slew_rate_limit(
             target=target_linear_velocity,

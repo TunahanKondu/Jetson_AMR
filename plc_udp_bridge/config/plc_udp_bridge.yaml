@@ -1,0 +1,18 @@
+plc_udp_bridge:
+  ros__parameters:
+    # Listen on every local interface. Override plc_ip from the launch command
+    # while testing on DHCP networks.
+    local_ip: "0.0.0.0"
+    local_port: 0
+    plc_ip: "192.168.100.100"
+    plc_port: 1515
+    send_period_ms: 1000
+    connection_timeout_ms: 2500
+    map_frame: "map"
+    robot_frame: "base_footprint"
+
+plc_mission_adapter:
+  ros__parameters:
+    command_timeout_sec: 2.0
+    max_command_retries: 3
+    emergency_stop_topic: "/amr/emergency_stop"

@@ -1,0 +1,12 @@
+nmcli connection show
+
+
+sudo nmcli connection modify "YARISMA DENEME AGI" \
+ipv4.method manual \
+ipv4.addresses 192.168.100.10/24 \
+ipv4.gateway 192.168.100.1 \
+connection.autoconnect yes \
+connection.autoconnect-priority 100
+
+sudo nmcli connection down "YARISMA DENEME AGI"
+sudo nmcli connection up "YARISMA DENEME AGI"

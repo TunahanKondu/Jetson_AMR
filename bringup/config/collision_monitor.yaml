@@ -1,0 +1,39 @@
+collision_monitor:
+  ros__parameters:
+    use_sim_time: False
+
+    base_frame_id: "base_footprint"
+    odom_frame_id: "odom"
+    cmd_vel_in_topic: "cmd_vel_smoothed"
+    cmd_vel_out_topic: "cmd_vel"
+
+    transform_tolerance: 0.5
+    source_timeout: 1.0
+    base_shift_correction: True
+    stop_pub_timeout: 2.0
+
+    polygons: ["PolygonStop"]
+
+    PolygonStop:
+      type: "polygon"
+
+      # Aracın önündeki STOP bölgesi
+      # X: ileri yön
+      # Y: sağ-sol
+      points: [1.0, 0.40,
+               1.0, -0.40,
+               0.30, -0.40,
+               0.30, 0.40]
+
+      action_type: "stop"
+      max_points: 3
+      visualize: True
+      polygon_pub_topic: "polygon_stop"
+      enabled: True
+
+    observation_sources: ["scan"]
+
+    scan:
+      type: "scan"
+      topic: "/scan_filtered"
+      enabled: True

@@ -26,6 +26,7 @@ setup(
         'console_scripts': [
         'line_detector = pulsar_line_following.line_detector_node:main',
         'line_controller = pulsar_line_following.line_controller_node:main',
+        'pre_alignment = pulsar_line_following.pre_alignment_node:main',
         ],
     },
 )
